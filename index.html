@@ -212,32 +212,53 @@ function taxiFareForKm(km){
  return 110000+(km-20)*10000;
 }
 function updatePriceEstimate(){
- const services=[...document.querySelectorAll('input[name="service"]:checked')].map(x=>x.value);
+ // Re-read all form values on every change so the estimate never relies on stale values.
+ const services=[...document.querySelectorAll('input[name="service"]:checked')].map(x=>String(x.value||""));
  const hasTaxi=services.some(s=>s.toLowerCase().includes("dog taxi"));
- const hasUnpriced=services.some(s=>s.toLowerCase().includes("dog walking")||s.toLowerCase().includes("dog cafe")||s.toLowerCase().includes("other"));
- const km=parseFloat($("distanceKm").value);
- const dogs=Math.max(1,parseInt($("dogCount").value||"1",10));
- const humans=Math.max(0,parseInt($("extraHumans").value||"0",10));
+ const hasUnpriced=services.some(s=>/dog walking|dog cafe|other/i.test(s));
+ const kmRaw=$("distanceKm").value;
+ const km=kmRaw.trim()===""?NaN:Number(kmRaw);
+ const dogs=Math.max(1,Number.parseInt($("dogCount").value,10)||1);
+ const humans=Math.max(0,Number.parseInt($("extraHumans").value,10)||0);
+ const round=$("direction").value==="Round trip";
  let parts=[],total=0,needsRoute=false;
  if(hasTaxi){
-  if(!Number.isFinite(km)){needsRoute=true;parts.push("Dog Taxi fare: waiting for Google Maps road distance");}
-  else {
-   let fare=taxiFareForKm(km); const round=$("direction").value==="Round trip";
+  if(!Number.isFinite(km)||km<0){
+   needsRoute=true;
+   parts.push("Dog Taxi fare: waiting for Google Maps road distance");
+  }else{
+   let fare=taxiFareForKm(km);
    if(round)fare*=2;
-   total+=fare;parts.push(`Dog Taxi${round?" (round trip)":""} — ${km.toFixed(1)} km one way: ${IDR(fare)}`);
+   total+=fare;
+   parts.push(`Dog Taxi${round?" (round trip)":""} — ${km.toFixed(1)} km one way: ${IDR(fare)}`);
   }
  }
- if(humans){const fee=humans*30000;total+=fee;parts.push(`Additional humans (${humans} × Rp30.000): ${IDR(fee)}`)}
+ if(humans>0){const fee=humans*30000;total+=fee;parts.push(`Additional humans (${humans} × Rp30.000): ${IDR(fee)}`)}
  if(dogs>1){const fee=(dogs-1)*20000;total+=fee;parts.push(`Additional dogs (${dogs-1} × Rp20.000): ${IDR(fee)}`)}
- if(!hasTaxi&&!humans&&dogs<=1){parts.push("No priced Dog Taxi service or extra passenger/dog selected yet.")}
- if(hasUnpriced)parts.push("Dog Walking / Dog Cafe & Trip / Other: price to be confirmed by Dog Dash (not included in total). ");
- $("priceEstimate").textContent=needsRoute?"Route needed for estimate":(total>0?IDR(total):"Quote required");
+ if(hasUnpriced)parts.push("Dog Walking / Dog Cafe & Trip / Other: price to be confirmed by Dog Dash (not included in total).");
+ if(!hasTaxi&&!hasUnpriced&&humans===0&&dogs===1)parts.push("Choose Dog Taxi to calculate a route-based fare, or select another service for a quote.");
+ const estimate=$("priceEstimate");
+ if(needsRoute){
+  estimate.textContent=total>0?`Route needed + ${IDR(total)} extras`:"Route needed for estimate";
+ }else{
+  estimate.textContent=total>0?IDR(total):"Quote required";
+ }
  $("priceBreakdown").textContent=parts.join(" • ")+(total>0?" • Estimate only; final price is confirmed by Dog Dash.":" • Final price will be confirmed by Dog Dash.");
 }
+// Listen to both typing and committed changes (mobile number fields often emit change on blur).
 document.querySelectorAll('input[name="service"]').forEach(el=>el.addEventListener("change",updatePriceEstimate));
-["dogCount","extraHumans","direction"].forEach(id=>$(id).addEventListener("input",updatePriceEstimate));
-["dogCount","extraHumans","direction"].forEach(id=>$(id).addEventListener("change",updatePriceEstimate));
- updatePriceEstimate() ;
+["dogCount","extraHumans","direction"].forEach(id=>{
+ const el=$(id);
+ el.addEventListener("input",updatePriceEstimate);
+ el.addEventListener("change",updatePriceEstimate);
+});
+// Fallback listeners for any future code that updates the route fields and dispatches events.
+["distanceKm","distance"].forEach(id=>{
+ $(id).addEventListener("input",updatePriceEstimate);
+ $(id).addEventListener("change",updatePriceEstimate);
+});
+updatePriceEstimate();
+
 $("orderForm").addEventListener("submit",e=>{
  e.preventDefault();
  const services=[...document.querySelectorAll('input[name="service"]:checked')].map(x=>x.value);
