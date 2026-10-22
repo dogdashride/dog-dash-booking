@@ -53,7 +53,7 @@ const today=new Date();$("date").min=new Date(today.getTime()-today.getTimezoneO
 
 // Google Maps Platform: Places Autocomplete Data API + Routes library.
 // Add a restricted Google Maps API key below and enable Maps JavaScript API + Places API (New).
-const GOOGLE_MAPS_API_KEY = "AIzaSyAWV5Utfbbp1kzd6Vch3vO7KVIt4iD-dWE";
+const GOOGLE_MAPS_API_KEY = "YOUR_NEW_RESTRICTED_GOOGLE_MAPS_API_KEY";
 let pickupPoint=null, dropoffPoint=null, routeRequestId=0, mapsLoaderPromise=null;
 let googlePlaces=null, googleRoutes=null, autocompleteSession=null;
 function mapsStatus(message){$("distanceStatus").textContent=message}
@@ -164,12 +164,12 @@ async function calcRoute(){
    origin:new google.maps.LatLng(pickupPoint.lat,pickupPoint.lng),
    destination:new google.maps.LatLng(dropoffPoint.lat,dropoffPoint.lng),
    travelMode:"DRIVING",
-   fields:["distanceMeters","duration"]
+   fields:["distanceMeters","durationMillis"]
   }),15000,"Timed out waiting for Google Routes API. Check the Routes API key restriction, billing, and API errors in Google Cloud.");
   if(requestId!==routeRequestId)return;
   if(!results.length||typeof results[0].distanceMeters!=="number")throw new Error("Google Maps could not find a driving route between these locations.");
   const route=results[0],km=route.distanceMeters/1000;
-  const durationSeconds=parseFloat(String(route.duration||"0").replace("s",""));
+  const durationSeconds=Number(route.durationMillis||0)/1000;
   $("distance").value=km.toFixed(1)+" km";
   $("distanceKm").value=String(km);
   $("durationRoute").value=formatDuration(durationSeconds);
