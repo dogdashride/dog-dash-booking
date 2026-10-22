@@ -51,7 +51,6 @@ const WA_NUMBER="6285117100245";
 const $=id=>document.getElementById(id);
 const today=new Date();$("date").min=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
 
-updatePriceEstimate();
 // Google Maps Platform: Places Autocomplete Data API + Routes library.
 // Add a restricted Google Maps API key below and enable Maps JavaScript API + Places API (New).
 const GOOGLE_MAPS_API_KEY = "AIzaSyAWV5Utfbbp1kzd6Vch3vO7KVIt4iD-dWE";
@@ -238,6 +237,7 @@ function updatePriceEstimate(){
 document.querySelectorAll('input[name="service"]').forEach(el=>el.addEventListener("change",updatePriceEstimate));
 ["dogCount","extraHumans","direction"].forEach(id=>$(id).addEventListener("input",updatePriceEstimate));
 ["dogCount","extraHumans","direction"].forEach(id=>$(id).addEventListener("change",updatePriceEstimate));
+ updatePriceEstimate() ;
 $("orderForm").addEventListener("submit",e=>{
  e.preventDefault();
  const services=[...document.querySelectorAll('input[name="service"]:checked')].map(x=>x.value);
