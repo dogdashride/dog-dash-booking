@@ -37,8 +37,8 @@
 <div class="field full"><label for="dropoff">Drop-off point <span class="required">*</span></label><input id="dropoff" required placeholder="Enter destination, clinic, groomer, daycare, or address" autocomplete="off"><div class="hint">Tap “Find destination” and choose the matching place to calculate the driving route.</div><div class="field-tools"><button class="mini-btn" type="button" id="searchDropoff">Find destination</button><button class="mini-btn" type="button" id="swapRoute">↕ Swap pickup & drop-off</button><button class="mini-btn" type="button" id="clearDropoff">Clear</button></div><div class="address-results" id="dropoffResults" aria-live="polite"></div></div>
 <div class="route-card"><div class="route-actions"><strong>🗺 Your trip estimate</strong><a id="openMapsRoute" href="https://www.google.com/maps" target="_blank" rel="noopener" style="font-size:12px;font-weight:800;color:#1557b0;pointer-events:none;opacity:.5">Preview route in Google Maps ↗</a></div><div id="distanceStatus" class="map-status" role="status" style="margin-top:10px">Enter both addresses, then find and select each address to calculate the Google Maps route.</div><div class="route-stats"><div class="route-stat"><span>ONE-WAY ROAD DISTANCE</span><strong id="distanceDisplay">— km</strong></div><div class="route-stat"><span>ESTIMATED DRIVE TIME</span><strong id="durationDisplay">—</strong></div></div><input id="distance" type="hidden"><input id="distanceKm" type="hidden"><input id="durationRoute" type="hidden"><div class="google-attribution">Address suggestions, driving distance, and duration use Google Maps Platform. Requires a configured, restricted Google Maps API key. Estimates may differ from actual routes and traffic.</div></div>
 <div class="field"><label for="direction">Trip type</label><select id="direction"><option>One-way</option><option>Round trip</option><option>Not applicable / walking</option></select></div>
-<div class="field"><label for="duration">Duration / extra details</label><input id="duration" placeholder="e.g. 60-min walk"></div>
-<div class="price-card"><div style="font-weight:800;color:#18553d">Estimated service price</div><strong id="priceEstimate">Waiting for Dog Dash rates</strong><div class="hint" id="priceBreakdown">Dog Taxi is estimated from the one-way road distance calculated using Google Maps. Extra passengers and additional dogs are added below. Walking and cafe/trip services need a separate quote.</div></div>
+
+<div class="price-card"><div style="font-weight:800;color:#18553d">Estimated service price</div><strong id="priceEstimate">Waiting for Dog Dash rates</strong><div class="hint" id="priceBreakdown">Dog Taxi is estimated from Google Maps road distance. Dog Walking is Rp185.000 for one dog per 45-minute session; each additional dog is Rp20.000. Extra human passengers are Rp30.000 each. Dog Cafe / Trip and other requests need a separate quote.</div></div>
 <div class="field full"><label for="notes">Other requests</label><textarea id="notes" placeholder="Additional stops, waiting time, vet appointment, etc."></textarea></div>
 </div></section>
 <section class="card"><h2>4. Review & send</h2><p class="hint">Tap below to open WhatsApp with your order details addressed to Dog Dash. Please press Send in WhatsApp to submit the booking request. This is a request, not a confirmed booking; Dog Dash will confirm availability and price.</p><button class="primary" type="submit">Send booking request via WhatsApp</button><div id="error" class="hint" role="alert" style="margin-top:8px"></div></section>
@@ -59,27 +59,55 @@ let googlePlaces=null, googleRoutes=null, autocompleteSession=null;
 function mapsStatus(message){$("distanceStatus").textContent=message}
 function loadGoogleMaps(){
  if(mapsLoaderPromise)return mapsLoaderPromise;
- if(!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY==="YOUR_GOOGLE_MAPS_API_KEY" || GOOGLE_MAPS_API_KEY==="YOUR_NEW_RESTRICTED_GOOGLE_MAPS_API_KEY"){
-  return Promise.reject(new Error("Google Maps is not configured yet. Add your API key in the form's JavaScript to enable address search and automatic distance estimates."));
+ if(!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY==="YOUR_GOOGLE_MAPS_API_KEY"){
+  return Promise.reject(new Error("Google Maps is not configured yet. Add your restricted Google Maps API key to enable address search and automatic distance estimates."));
  }
+ // Wait for Google's ready callback, not merely script.onload. The script can
+ // finish downloading just before importLibrary becomes available, causing
+ // the first Find Address click to fail while a second click works.
  mapsLoaderPromise=new Promise((resolve,reject)=>{
-  if(window.google&&window.google.maps&&window.google.maps.importLibrary){resolve();return}
+  if(window.google&&window.google.maps&&typeof window.google.maps.importLibrary==="function"){
+   resolve();return;
+  }
+  let settled=false;
+  let loadTimer=null;
+  const finish=(error)=>{
+   if(settled)return;
+   settled=true;
+   if(loadTimer)clearTimeout(loadTimer);
+   if(error){
+    mapsLoaderPromise=null;
+    reject(error);
+    return;
+   }
+   if(window.google&&window.google.maps&&typeof window.google.maps.importLibrary==="function"){
+    resolve();
+   }else{
+    mapsLoaderPromise=null;
+    reject(new Error("Google Maps loaded but its library loader was not ready. Please try again."));
+   }
+  };
+  window.dogDashGoogleMapsReady=()=>finish(null);
+  const existingScript=document.querySelector('script[data-dog-dash-google-maps="true"]');
+  if(existingScript){
+   loadTimer=setTimeout(()=>finish(new Error("Google Maps is taking too long to initialize. Check the API key, website restrictions, billing, and enabled APIs.")),15000);
+   return;
+  }
   const script=document.createElement("script");
-  script.src="https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(GOOGLE_MAPS_API_KEY)+"&v=weekly&loading=async";
-  script.async=true;script.defer=true;
-  script.onload=()=>resolve();
-  script.onerror=()=>{mapsLoaderPromise=null;reject(new Error("Google Maps could not load. Check your API key, billing, and enabled APIs."))};
+  script.dataset.dogDashGoogleMaps="true";
+  script.src="https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(GOOGLE_MAPS_API_KEY)+"&v=weekly&loading=async&callback=dogDashGoogleMapsReady";
+  script.async=true;
+  script.defer=true;
+  script.onerror=()=>finish(new Error("Google Maps could not load. Check your API key, website restrictions, billing, and enabled APIs."));
+  loadTimer=setTimeout(()=>finish(new Error("Google Maps is taking too long to initialize. Check your API key, website restrictions, billing, and enabled APIs.")),15000);
   document.head.appendChild(script);
  });
  return mapsLoaderPromise;
 }
-function withTimeout(promise, ms, message){
- return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(message)),ms))]);
-}
 async function getGoogleLibraries(){
- await withTimeout(loadGoogleMaps(),12000,"Timed out loading Google Maps JavaScript. Check the API key, website restriction, billing, and Maps JavaScript API.");
- if(!googlePlaces)googlePlaces=await withTimeout(google.maps.importLibrary("places"),12000,"Timed out loading the Places library. Check that Places API (New) is enabled and allowed by this API key.");
- if(!googleRoutes)googleRoutes=await withTimeout(google.maps.importLibrary("routes"),12000,"Timed out loading the Routes library. Check that Routes API is enabled and allowed by this API key.");
+ await loadGoogleMaps();
+ if(!googlePlaces)googlePlaces=await google.maps.importLibrary("places");
+ if(!googleRoutes)googleRoutes=await google.maps.importLibrary("routes");
  return {places:googlePlaces,routes:googleRoutes};
 }
 function setRouteLink(){
@@ -153,23 +181,20 @@ async function calcRoute(){
   mapsStatus("Find and select both pickup and destination addresses to calculate the route.");
   updatePriceEstimate();return;
  }
- mapsStatus("Loading Google Maps Routes library…");
+ mapsStatus("Calculating Google Maps road distance and estimated driving time…");
  try{
   const {routes}=await getGoogleLibraries();
-  if(requestId!==routeRequestId)return;
   const {Route}=routes;
-  if(!Route||typeof Route.computeRoutes!=="function")throw new Error("Google Maps loaded, but the Routes library does not provide Route.computeRoutes. Check the API version and Routes API access.");
-  mapsStatus("Routes library loaded. Requesting driving distance and time…");
-  const {routes:results=[]}=await withTimeout(Route.computeRoutes({
+  const {routes:results=[]}=await Route.computeRoutes({
    origin:new google.maps.LatLng(pickupPoint.lat,pickupPoint.lng),
    destination:new google.maps.LatLng(dropoffPoint.lat,dropoffPoint.lng),
    travelMode:"DRIVING",
-   fields:["distanceMeters","durationMillis"]
-  }),15000,"Timed out waiting for Google Routes API. Check the Routes API key restriction, billing, and API errors in Google Cloud.");
+   fields:["distanceMeters","duration"]
+  });
   if(requestId!==routeRequestId)return;
   if(!results.length||typeof results[0].distanceMeters!=="number")throw new Error("Google Maps could not find a driving route between these locations.");
   const route=results[0],km=route.distanceMeters/1000;
-  const durationSeconds=Number(route.durationMillis||0)/1000;
+  const durationSeconds=parseFloat(String(route.duration||"0").replace("s",""));
   $("distance").value=km.toFixed(1)+" km";
   $("distanceKm").value=String(km);
   $("durationRoute").value=formatDuration(durationSeconds);
@@ -221,7 +246,8 @@ function updatePriceEstimate(){
  // Re-read all form values on every change so the estimate never relies on stale values.
  const services=[...document.querySelectorAll('input[name="service"]:checked')].map(x=>String(x.value||""));
  const hasTaxi=services.some(s=>s.toLowerCase().includes("dog taxi"));
- const hasUnpriced=services.some(s=>/dog walking|dog cafe|other/i.test(s));
+ const hasWalking=services.some(s=>s.toLowerCase().includes("dog walking"));
+ const hasUnpriced=services.some(s=>/dog cafe|other/i.test(s));
  const kmRaw=$("distanceKm").value;
  const km=kmRaw.trim()===""?NaN:Number(kmRaw);
  const dogs=Math.max(1,Number.parseInt($("dogCount").value,10)||1);
@@ -233,19 +259,31 @@ function updatePriceEstimate(){
    needsRoute=true;
    parts.push("Dog Taxi fare: waiting for Google Maps road distance");
   }else{
-   let fare=taxiFareForKm(km);
-   if(round)fare*=2;
+   const oneWayFare=taxiFareForKm(km);
+   let fare=round ? oneWayFare*2*0.8 : oneWayFare;
+   fare=Math.round(fare);
    total+=fare;
-   parts.push(`Dog Taxi${round?" (round trip)":""} — ${km.toFixed(1)} km one way: ${IDR(fare)}`);
+   parts.push(round
+    ? `Dog Taxi (round trip, 20% trip-fare discount) — ${km.toFixed(1)} km one way: ${IDR(oneWayFare)} × 2 − 20% = ${IDR(fare)}`
+    : `Dog Taxi (one-way) — ${km.toFixed(1)} km: ${IDR(fare)}`);
   }
  }
+ if(hasWalking){
+  const walkingBase=185000;
+  total+=walkingBase;
+  parts.push(`Dog Walking — 1 dog, 45-minute session: ${IDR(walkingBase)}`);
+ }
  if(humans>0){const fee=humans*30000;total+=fee;parts.push(`Additional humans (${humans} × Rp30.000): ${IDR(fee)}`)}
- if(dogs>1){const fee=(dogs-1)*20000;total+=fee;parts.push(`Additional dogs (${dogs-1} × Rp20.000): ${IDR(fee)}`)}
- if(hasUnpriced)parts.push("Dog Walking / Dog Cafe & Trip / Other: price to be confirmed by Dog Dash (not included in total).");
- if(!hasTaxi&&!hasUnpriced&&humans===0&&dogs===1)parts.push("Choose Dog Taxi to calculate a route-based fare, or select another service for a quote.");
+ if(dogs>1){
+  const fee=(dogs-1)*20000;
+  total+=fee;
+  parts.push(`Additional dogs (${dogs-1} × Rp20.000): ${IDR(fee)}`);
+ }
+ if(hasUnpriced)parts.push("Dog Cafe / Trip / Other: price to be confirmed by Dog Dash (not included in total).");
+ if(!hasTaxi&&!hasWalking&&!hasUnpriced&&humans===0&&dogs===1)parts.push("Choose Dog Taxi for a route-based fare or Dog Walking for a 45-minute session estimate.");
  const estimate=$("priceEstimate");
  if(needsRoute){
-  estimate.textContent=total>0?`Route needed + ${IDR(total)} extras`:"Route needed for estimate";
+  estimate.textContent=total>0?`Route needed + ${IDR(total)} other services/extras`:"Route needed for estimate";
  }else{
   estimate.textContent=total>0?IDR(total):"Quote required";
  }
