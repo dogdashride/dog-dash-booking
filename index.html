@@ -189,12 +189,12 @@ async function calcRoute(){
    origin:new google.maps.LatLng(pickupPoint.lat,pickupPoint.lng),
    destination:new google.maps.LatLng(dropoffPoint.lat,dropoffPoint.lng),
    travelMode:"DRIVING",
-   fields:["distanceMeters","duration"]
+   fields:["distanceMeters","durationMillis"]
   });
   if(requestId!==routeRequestId)return;
   if(!results.length||typeof results[0].distanceMeters!=="number")throw new Error("Google Maps could not find a driving route between these locations.");
   const route=results[0],km=route.distanceMeters/1000;
-  const durationSeconds=parseFloat(String(route.duration||"0").replace("s",""));
+  const durationSeconds=Number(route.durationMillis||0)/1000;
   $("distance").value=km.toFixed(1)+" km";
   $("distanceKm").value=String(km);
   $("durationRoute").value=formatDuration(durationSeconds);
@@ -333,7 +333,6 @@ $("orderForm").addEventListener("submit",e=>{
  "Estimated one-way road distance (Google Maps): "+v("distance"),
  "Estimated driving time: "+v("durationRoute"),
  "Trip type: "+v("direction"),
- "Duration / extra details: "+v("duration"),
  "Estimated price: "+$("priceEstimate").textContent,
  "Price breakdown: "+$("priceBreakdown").textContent,
  "Other requests: "+v("notes"),
